@@ -74,6 +74,7 @@ export class AutodeskDataManagementService {
     projectId: string,
     parentFolderId: string,
     folderName: string,
+    parentFolderType: string,
   ): Promise<AutodeskFolder> {
     try {
       const body = {
@@ -83,7 +84,7 @@ export class AutodeskDataManagementService {
           attributes: {
             name: folderName,
             extension: {
-              type: 'folders:autodesk.core:Folder',
+              type: parentFolderType,
               version: '1.0',
             },
           },
