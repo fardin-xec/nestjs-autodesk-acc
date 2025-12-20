@@ -68,15 +68,35 @@ export class AutodeskDataManagementService {
   }
 
   /**
-   * Create a new folder
+   * Create a new folder (FIXED VERSION)
+   * Automatically detects the correct folder type from parent
    */
   async createFolder(
     projectId: string,
     parentFolderId: string,
     folderName: string,
-    parentFolderType: string,
   ): Promise<AutodeskFolder> {
     try {
+      // Step 1: Get parent folder to determine correct extension type
+      const parentFolder = await this.getFolder(projectId, parentFolderId);
+      
+      // Step 2: Determine the correct extension type
+      let extensionType = 'folders:autodesk.bim360:Folder'; // Default for ACC projects
+      
+      if (parentFolder.attributes?.extension?.type) {
+        const parentType = parentFolder.attributes.extension.type;
+        
+        // Match the parent's folder type
+        if (parentType.includes('bim360')) {
+          extensionType = 'folders:autodesk.bim360:Folder';
+        } else if (parentType.includes('core')) {
+          extensionType = 'folders:autodesk.core:Folder';
+        }
+      }
+
+      this.logger.log(`Creating folder with extension type: ${extensionType}`);
+
+      // Step 3: Create the folder with correct extension
       const body = {
         jsonapi: { version: '1.0' },
         data: {
@@ -84,7 +104,7 @@ export class AutodeskDataManagementService {
           attributes: {
             name: folderName,
             extension: {
-              type: parentFolderType,
+              type: extensionType,
               version: '1.0',
             },
           },
@@ -111,6 +131,67 @@ export class AutodeskDataManagementService {
         `Failed to create folder ${folderName}`,
         error.response?.data || error.message,
       );
+      
+      // Log the full error for debugging
+      if (error.response?.data) {
+        this.logger.error('Error details:', JSON.stringify(error.response.data, null, 2));
+      }
+      
+      throw new BadRequestException(`Failed to create folder: ${folderName}`);
+    }
+  }
+
+  /**
+   * Create folder with explicit extension type (alternative method)
+   */
+  async createFolderWithType(
+    projectId: string,
+    parentFolderId: string,
+    folderName: string,
+    extensionType: string = 'folders:autodesk.bim360:Folder',
+  ): Promise<AutodeskFolder> {
+    try {
+      const body = {
+        jsonapi: { version: '1.0' },
+        data: {
+          type: 'folders',
+          attributes: {
+            name: folderName,
+            extension: {
+              type: extensionType,
+              version: '1.0',
+            },
+          },
+          relationships: {
+            parent: {
+              data: {
+                type: 'folders',
+                id: parentFolderId,
+              },
+            },
+          },
+        },
+      };
+
+      this.logger.log(`Creating folder with type: ${extensionType}`);
+      
+      const response = await this.httpClient.post(
+        `/data/v1/projects/${projectId}/folders`,
+        body,
+      );
+      
+      this.logger.log(`Created folder: ${folderName}`);
+      return response.data.data;
+    } catch (error) {
+      this.logger.error(
+        `Failed to create folder ${folderName}`,
+        error.response?.data || error.message,
+      );
+      
+      if (error.response?.data) {
+        this.logger.error('Error details:', JSON.stringify(error.response.data, null, 2));
+      }
+      
       throw new BadRequestException(`Failed to create folder: ${folderName}`);
     }
   }

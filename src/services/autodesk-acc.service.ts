@@ -55,8 +55,8 @@ export class AutodeskAccService {
   /**
    * Create a new folder
    */
-  async createFolder(projectId: string, parentFolderId: string, folderName: string, parentFolderType: string) {
-    return this.dataManagement.createFolder(projectId, parentFolderId, folderName,parentFolderType);
+  async createFolder(projectId: string, parentFolderId: string, folderName: string) {
+    return this.dataManagement.createFolder(projectId, parentFolderId, folderName);
   }
 
   /**
