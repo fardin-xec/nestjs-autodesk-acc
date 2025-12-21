@@ -242,7 +242,7 @@ export class AutodeskDataManagementService {
         `Failed to upload file ${fileName}`,
         error.response?.data || error.message,
       );
-      throw new BadRequestException(`Failed to upload file: ${fileName}`);
+      throw new BadRequestException(`Failed to upload file: ${error}`);
     }
   }
 
