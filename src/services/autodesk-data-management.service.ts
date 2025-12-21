@@ -407,12 +407,38 @@ private async completeUpload(objectId: string,uploadKey: string): Promise<void> 
   /**
    * Create first version of item
    */
-  private async createFirstVersion(
-    projectId: string,
-    folderId: string,
-    fileName: string,
-    objectId: string,
-  ): Promise<AutodeskItem> {
+  /**
+ * Create first version of item (with automatic type detection)
+ */
+private async createFirstVersion(
+  projectId: string,
+  folderId: string,
+  fileName: string,
+  objectId: string,
+): Promise<AutodeskItem> {
+  try {
+    // Get parent folder to determine correct extension type
+    const parentFolder = await this.getFolder(projectId, folderId);
+    
+    // Determine the correct extension type based on parent folder
+    let itemType = 'items:autodesk.bim360:File';
+    let versionType = 'versions:autodesk.bim360:File';
+    
+    if (parentFolder.attributes?.extension?.type) {
+      const parentType = parentFolder.attributes.extension.type;
+      
+      // Match the parent's folder type
+      if (parentType.includes('bim360')) {
+        itemType = 'items:autodesk.bim360:File';
+        versionType = 'versions:autodesk.bim360:File';
+      } else if (parentType.includes('core')) {
+        itemType = 'items:autodesk.core:File';
+        versionType = 'versions:autodesk.core:File';
+      }
+    }
+
+    this.logger.log(`Creating item with type: ${itemType}, version type: ${versionType}`);
+
     const body = {
       jsonapi: { version: '1.0' },
       data: {
@@ -420,7 +446,7 @@ private async completeUpload(objectId: string,uploadKey: string): Promise<void> 
         attributes: {
           displayName: fileName,
           extension: {
-            type: 'items:autodesk.core:File',
+            type: itemType,
             version: '1.0',
           },
         },
@@ -446,7 +472,7 @@ private async completeUpload(objectId: string,uploadKey: string): Promise<void> 
           attributes: {
             name: fileName,
             extension: {
-              type: 'versions:autodesk.core:File',
+              type: versionType,
               version: '1.0',
             },
           },
@@ -468,8 +494,19 @@ private async completeUpload(objectId: string,uploadKey: string): Promise<void> 
     );
 
     return response.data.data;
+  } catch (error) {
+    this.logger.error(
+      `Failed to create first version for ${fileName}`,
+      error.response?.data || error.message,
+    );
+    
+    if (error.response?.data) {
+      this.logger.error('Error details:', JSON.stringify(error.response.data, null, 2));
+    }
+    
+    throw error;
   }
-
+}
   /**
    * Delete an item
    */
