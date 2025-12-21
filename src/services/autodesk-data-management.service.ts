@@ -223,16 +223,16 @@ export class AutodeskDataManagementService {
     try {
       // Step 1: Create storage location
       const storage = await this.createStorage(projectId, folderId, fileName);
-      console.log(storage)
+      console.log(JSON.stringify(storage))
       // Step 2: Upload file to storage
-      await this.uploadToStorage(storage.objectId, fileBuffer, contentType);
+      await this.uploadToStorage(storage.id, fileBuffer, contentType);
 
       // Step 3: Create first version of the item
       const item = await this.createFirstVersion(
         projectId,
         folderId,
         fileName,
-        storage.objectId,
+        storage.id,
       );
 
       this.logger.log(`Successfully uploaded file: ${fileName}`);

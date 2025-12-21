@@ -46,8 +46,8 @@ export interface UploadFileOptions {
 }
 
 export interface AutodeskStorageLocation {
-  bucketKey: string;
-  objectId: string;
+  type: string;
+  id: string;
   objectKey: string;
   size: number;
   location: string;
