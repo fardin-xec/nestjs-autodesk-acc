@@ -217,34 +217,124 @@ export class AutodeskDataManagementService {
   /**
    * Upload a file to ACC
    */
-  async uploadFile(options: UploadFileOptions): Promise<AutodeskItem> {
-    const { fileName, folderId, projectId, fileBuffer, contentType } = options;
+ /**
+ * Upload a file to ACC (Updated for modern API)
+ */
+async uploadFile(options: UploadFileOptions): Promise<AutodeskItem> {
+  const { fileName, folderId, projectId, fileBuffer, contentType } = options;
 
-    try {
-      // Step 1: Create storage location
-      const storage = await this.createStorage(projectId, folderId, fileName);
-      console.log(JSON.stringify(storage))
-      // Step 2: Upload file to storage
-      await this.uploadToStorage(storage.id, fileBuffer, contentType);
+  try {
+    // Step 1: Create storage location
+    const storage = await this.createStorage(projectId, folderId, fileName);
+    this.logger.log(`Created storage location for: ${fileName}`);
+    
+    // Step 2: Get signed upload URL
+    const signedUrl = await this.getSignedUploadUrl(storage.id);
+    
+    // Step 3: Upload file to signed URL
+    await this.uploadToSignedUrl(signedUrl, fileBuffer, contentType);
 
-      // Step 3: Create first version of the item
-      const item = await this.createFirstVersion(
-        projectId,
-        folderId,
-        fileName,
-        storage.id,
-      );
+    // Step 4: Complete the upload
+    await this.completeUpload(storage.id);
 
-      this.logger.log(`Successfully uploaded file: ${fileName}`);
-      return item;
-    } catch (error) {
-      this.logger.error(
-        `Failed to upload file ${fileName}`,
-        error.response?.data || error.message,
-      );
-      throw new BadRequestException(`Failed to upload file: ${error}`);
-    }
+    // Step 5: Create first version of the item
+    const item = await this.createFirstVersion(
+      projectId,
+      folderId,
+      fileName,
+      storage.id,
+    );
+
+    this.logger.log(`Successfully uploaded file: ${fileName}`);
+    return item;
+  } catch (error) {
+    this.logger.error(
+      `Failed to upload file ${fileName}`,
+      error.response?.data || error.message,
+    );
+    throw new BadRequestException(`Failed to upload file: ${error.message}`);
   }
+}
+
+/**
+ * Get signed upload URL for storage object
+ */
+private async getSignedUploadUrl(objectId: string): Promise<string> {
+  try {
+    // Extract bucket key and object key from objectId
+    const matches = objectId.match(/urn:adsk\.objects:os\.object:([^/]+)\/(.+)/);
+    if (!matches) {
+      throw new BadRequestException('Invalid object ID format');
+    }
+
+    const [, bucketKey, objectKey] = matches;
+
+    const response = await this.httpClient.get(
+      `/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/signeds3upload`,
+      {
+        params: {
+          minutesExpiration: 30,
+        },
+      },
+    );
+
+    return response.data.urls[0];
+  } catch (error) {
+    this.logger.error('Failed to get signed upload URL', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+/**
+ * Upload file to signed S3 URL
+ */
+private async uploadToSignedUrl(
+  signedUrl: string,
+  fileBuffer: Buffer,
+  contentType = 'application/octet-stream',
+): Promise<void> {
+  try {
+    // Use axios without auth interceptor for S3 upload
+    await axios.put(signedUrl, fileBuffer, {
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': fileBuffer.length,
+      },
+    });
+    
+    this.logger.log('File uploaded to signed URL');
+  } catch (error) {
+    this.logger.error('Failed to upload to signed URL', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Complete the upload (finalize the object)
+ */
+private async completeUpload(objectId: string): Promise<void> {
+  try {
+    // Extract bucket key and object key from objectId
+    const matches = objectId.match(/urn:adsk\.objects:os\.object:([^/]+)\/(.+)/);
+    if (!matches) {
+      throw new BadRequestException('Invalid object ID format');
+    }
+
+    const [, bucketKey, objectKey] = matches;
+
+    await this.httpClient.post(
+      `/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/signeds3upload`,
+      {
+        uploadKey: '', // Empty string to finalize single-part upload
+      },
+    );
+    
+    this.logger.log('Upload completed successfully');
+  } catch (error) {
+    this.logger.error('Failed to complete upload', error.response?.data || error.message);
+    throw error;
+  }
+}
 
   /**
    * Create storage location for file
