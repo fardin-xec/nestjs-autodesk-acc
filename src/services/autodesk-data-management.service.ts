@@ -229,13 +229,13 @@ async uploadFile(options: UploadFileOptions): Promise<AutodeskItem> {
     this.logger.log(`Created storage location for: ${fileName}`);
     
     // Step 2: Get signed upload URL
-    const signedUrl = await this.getSignedUploadUrl(storage.id);
+    const { signedUrl, uploadKey } = await this.getSignedUploadUrl(storage.id);
     
     // Step 3: Upload file to signed URL
     await this.uploadToSignedUrl(signedUrl, fileBuffer, contentType);
 
     // Step 4: Complete the upload
-    await this.completeUpload(storage.id);
+    await this.completeUpload(storage.id,uploadKey);
 
     // Step 5: Create first version of the item
     const item = await this.createFirstVersion(
@@ -259,7 +259,10 @@ async uploadFile(options: UploadFileOptions): Promise<AutodeskItem> {
 /**
  * Get signed upload URL for storage object
  */
-private async getSignedUploadUrl(objectId: string): Promise<string> {
+private async getSignedUploadUrl(objectId: string): Promise<{
+  signedUrl: string;
+  uploadKey: string;
+}> {
   try {
     // Extract bucket key and object key from objectId
     const matches = objectId.match(/urn:adsk\.objects:os\.object:([^/]+)\/(.+)/);
@@ -277,8 +280,11 @@ private async getSignedUploadUrl(objectId: string): Promise<string> {
         },
       },
     );
-    console.log(response.data)
-    return response.data.urls[0];
+
+    return {
+      signedUrl: response.data.urls[0],
+      uploadKey: response.data.uploadKey,
+    };
   } catch (error) {
     this.logger.error('Failed to get signed upload URL', error.response?.data || error.message);
     throw error;
@@ -312,7 +318,7 @@ private async uploadToSignedUrl(
 /**
  * Complete the upload (finalize the object)
  */
-private async completeUpload(objectId: string): Promise<void> {
+private async completeUpload(objectId: string,uploadKey: string): Promise<void> {
   try {
     // Extract bucket key and object key from objectId
     const matches = objectId.match(/urn:adsk\.objects:os\.object:([^/]+)\/(.+)/);
@@ -325,7 +331,7 @@ private async completeUpload(objectId: string): Promise<void> {
     await this.httpClient.post(
       `/oss/v2/buckets/${bucketKey}/objects/${encodeURIComponent(objectKey)}/signeds3upload`,
       {
-        uploadKey: '', // Empty string to finalize single-part upload
+        uploadKey: uploadKey, // Empty string to finalize single-part upload
       },
     );
     
