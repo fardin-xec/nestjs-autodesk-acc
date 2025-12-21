@@ -277,7 +277,7 @@ private async getSignedUploadUrl(objectId: string): Promise<string> {
         },
       },
     );
-
+    console.log(JSON.stringify(response))
     return response.data.urls[0];
   } catch (error) {
     this.logger.error('Failed to get signed upload URL', error.response?.data || error.message);
