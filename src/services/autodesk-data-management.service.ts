@@ -223,7 +223,7 @@ export class AutodeskDataManagementService {
     try {
       // Step 1: Create storage location
       const storage = await this.createStorage(projectId, folderId, fileName);
-
+      console.log(storage)
       // Step 2: Upload file to storage
       await this.uploadToStorage(storage.objectId, fileBuffer, contentType);
 
