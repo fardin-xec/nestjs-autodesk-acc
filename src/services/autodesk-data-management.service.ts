@@ -547,7 +547,7 @@ private async createFirstVersion(
   /**
  * Create folder at project root (alternative method when parent folder is unknown)
  */
-async createFolderAtRoot(
+async createRootFolder(
   projectId: string,
   folderName: string,
 ): Promise<AutodeskFolder> {
