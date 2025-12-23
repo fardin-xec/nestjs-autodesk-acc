@@ -544,7 +544,126 @@ private async createFirstVersion(
     }
   }
 
-  // Add these methods to your AutodeskDataManagementService class
+  /**
+ * Create folder at project root (alternative method when parent folder is unknown)
+ */
+async createFolderAtRoot(
+  projectId: string,
+  folderName: string,
+): Promise<AutodeskFolder> {
+  try {
+    this.logger.log(`Creating folder "${folderName}" at project root`);
+    
+    // First, try to get the Plans folder (default root for most ACC projects)
+    try {
+      const topFolders = await this.getProjectTopFolders(projectId);
+      
+      // Look for "Plans" or "Project Files" folder
+      const rootFolder = topFolders.find(f => {
+        const name = f.attributes?.name || f.attributes?.displayName || '';
+        return name === 'Plans' || name === 'Project Files' || name === 'Plan';
+      });
+      
+      if (rootFolder) {
+        this.logger.log(`Found root folder: ${rootFolder.attributes?.name} (${rootFolder.id})`);
+        return await this.createFolder(projectId, rootFolder.id, folderName);
+      }
+      
+      // If no standard root found, use the first top folder
+      if (topFolders.length > 0) {
+        const firstFolder = topFolders[0];
+        this.logger.log(`Using first top folder: ${firstFolder.attributes?.name} (${firstFolder.id})`);
+        return await this.createFolder(projectId, firstFolder.id, folderName);
+      }
+    } catch (error) {
+      this.logger.warn('Failed to get top folders, trying direct creation');
+    }
+    
+    // Last resort: try to create at project level directly
+    // Note: This may fail depending on ACC/BIM360 permissions
+    const body = {
+      jsonapi: { version: '1.0' },
+      data: {
+        type: 'folders',
+        attributes: {
+          name: folderName,
+          extension: {
+            type: 'folders:autodesk.bim360:Folder',
+            version: '1.0',
+          },
+        },
+        relationships: {
+          parent: {
+            data: {
+              type: 'folders',
+              id: `${projectId}` // Use project ID as parent
+            },
+          },
+        },
+      },
+    };
+
+    const response = await this.httpClient.post(
+      `/data/v1/projects/${projectId}/folders`,
+      body,
+    );
+    
+    this.logger.log(`Created folder at project root: ${folderName}`);
+    return response.data.data;
+  } catch (error) {
+    this.logger.error(
+      `Failed to create folder at root: ${folderName}`,
+      error.response?.data || error.message
+    );
+    
+    if (error.response?.data) {
+      this.logger.error('Error details:', JSON.stringify(error.response.data, null, 2));
+    }
+    
+    throw new BadRequestException(`Failed to create folder at root: ${folderName}`);
+  }
+}
+
+/**
+ * Get project top folders (root level folders)
+ */
+async getProjectTopFolders(projectId: string): Promise<AutodeskFolder[]> {
+  try {
+    this.logger.log(`Fetching top-level folders for project: ${projectId}`);
+    
+    const response = await this.httpClient.get(
+      `/project/v1/hubs/${this.extractHubId(projectId)}/projects/${projectId}/topFolders`
+    );
+    
+    const topFolders = response.data.data;
+    
+    this.logger.log(`Found ${topFolders.length} top-level folder(s)`);
+    topFolders.forEach((folder: any) => {
+      const folderName = folder.attributes?.name || folder.attributes?.displayName || 'Unknown';
+      this.logger.log(`  - "${folderName}" (${folder.id})`);
+    });
+    
+    return topFolders;
+  } catch (error) {
+    this.logger.error(
+      `Failed to get top folders for project ${projectId}`,
+      error.response?.data || error.message
+    );
+    throw error;
+  }
+}
+
+/**
+ * Extract hub ID from project ID
+ * Project IDs typically look like: b.{projectId}
+ * Hub IDs typically look like: b.{hubId}
+ */
+private extractHubId(projectId: string): string {
+  // This is a placeholder - you may need to pass hub ID separately
+  // or retrieve it from your project metadata
+  // For now, we'll try to use the project endpoint without hub
+  return projectId.split('.')[0];
+}
 
 /**
  * Get all folders recursively in a project
@@ -556,7 +675,29 @@ async getAllProjectFolders(
   try {
     const allFolders: AutodeskFolder[] = [];
     
-    // If no root folder ID provided, get the project root folders
+    // If no root folder ID provided, get the project top folders first
+    if (!rootFolderId) {
+      try {
+        const topFolders = await this.getProjectTopFolders(projectId);
+        allFolders.push(...topFolders);
+        
+        // Recursively get subfolders for each top folder
+        for (const folder of topFolders) {
+          try {
+            const subFolders = await this.getAllProjectFolders(projectId, folder.id);
+            allFolders.push(...subFolders);
+          } catch (error) {
+            this.logger.warn(`Failed to get subfolders for ${folder.id}:`, error.message);
+          }
+        }
+        
+        return allFolders;
+      } catch (error) {
+        this.logger.warn('Failed to get top folders, trying alternative method');
+      }
+    }
+    
+    // Alternative: Use folder contents endpoint
     const folderId = rootFolderId || projectId;
     
     this.logger.log(`Fetching folders from: ${folderId}`);
