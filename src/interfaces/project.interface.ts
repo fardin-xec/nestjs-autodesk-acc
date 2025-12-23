@@ -11,6 +11,16 @@ export interface AutodeskProject {
   country?: string;
   startDate?: string;
   endDate?: string;
+   attributes: {
+    name: string;
+  };
+  relationships: {
+    rootFolder: {
+      data: {
+        id: string;
+      };
+    };
+  };
 }
 
 export interface AutodeskHub {
