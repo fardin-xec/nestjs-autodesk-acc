@@ -543,4 +543,140 @@ private async createFirstVersion(
       throw new Error('Failed to search items');
     }
   }
+
+  // Add these methods to your AutodeskDataManagementService class
+
+/**
+ * Get all folders recursively in a project
+ */
+async getAllProjectFolders(
+  projectId: string,
+  rootFolderId?: string
+): Promise<AutodeskFolder[]> {
+  try {
+    const allFolders: AutodeskFolder[] = [];
+    
+    // If no root folder ID provided, get the project root folders
+    const folderId = rootFolderId || projectId;
+    
+    this.logger.log(`Fetching folders from: ${folderId}`);
+    
+    const { folders, items } = await this.getFolderContents(projectId, folderId);
+    
+    // Add current level folders
+    allFolders.push(...folders);
+    
+    // Recursively get subfolders
+    for (const folder of folders) {
+      try {
+        const subFolders = await this.getAllProjectFolders(projectId, folder.id);
+        allFolders.push(...subFolders);
+      } catch (error) {
+        this.logger.warn(`Failed to get subfolders for ${folder.id}:`, error.message);
+      }
+    }
+    
+    return allFolders;
+  } catch (error) {
+    this.logger.error(
+      `Failed to get all folders for project ${projectId}`,
+      error.response?.data || error.message
+    );
+    throw error;
+  }
+}
+
+/**
+ * Find folder by name in project
+ */
+async findFolderByName(
+  projectId: string,
+  folderName: string,
+  searchRootId?: string
+): Promise<AutodeskFolder | null> {
+  try {
+    this.logger.log(`Searching for folder: "${folderName}" in project ${projectId}`);
+    
+    const allFolders = await this.getAllProjectFolders(projectId, searchRootId);
+    
+    const foundFolder = allFolders.find(
+      folder => 
+        folder.attributes?.name === folderName || 
+        folder.attributes?.displayName === folderName
+    );
+    
+    if (foundFolder) {
+      this.logger.log(`Found folder "${folderName}" with ID: ${foundFolder.id}`);
+    } else {
+      this.logger.log(`Folder "${folderName}" not found`);
+    }
+    
+    return foundFolder || null;
+  } catch (error) {
+    this.logger.error(`Error searching for folder "${folderName}":`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Get or create folder by name
+ * This will search for existing folder first, create if not found
+ */
+async getOrCreateFolder(
+  projectId: string,
+  parentFolderId: string,
+  folderName: string
+): Promise<AutodeskFolder> {
+  try {
+    // First, try to find existing folder in parent
+    const { folders } = await this.getFolderContents(projectId, parentFolderId);
+    
+    const existingFolder = folders.find(
+      folder => 
+        folder.attributes?.name === folderName || 
+        folder.attributes?.displayName === folderName
+    );
+    
+    if (existingFolder) {
+      this.logger.log(`Found existing folder: "${folderName}" (ID: ${existingFolder.id})`);
+      return existingFolder;
+    }
+    
+    // If not found, create new folder
+    this.logger.log(`Creating new folder: "${folderName}"`);
+    return await this.createFolder(projectId, parentFolderId, folderName);
+  } catch (error) {
+    this.logger.error(`Failed to get or create folder "${folderName}":`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * List all folders with their IDs (for debugging)
+ */
+async listAllFoldersWithIds(projectId: string): Promise<Array<{ name: string; id: string; path: string }>> {
+  try {
+    this.logger.log('=== LISTING ALL FOLDERS ===');
+    
+    const allFolders = await this.getAllProjectFolders(projectId);
+    
+    const folderList = allFolders.map(folder => ({
+      name: folder.attributes?.name || folder.attributes?.displayName || 'Unknown',
+      id: folder.id,
+      path: folder.attributes?.name || folder.attributes?.displayName || 'Unknown'
+    }));
+    
+    folderList.forEach((folder, index) => {
+      this.logger.log(`${index + 1}. "${folder.name}" -> ${folder.id}`);
+    });
+    
+    this.logger.log(`Total folders found: ${folderList.length}`);
+    this.logger.log('===========================');
+    
+    return folderList;
+  } catch (error) {
+    this.logger.error('Failed to list folders:', error.message);
+    throw error;
+  }
+}
 }
